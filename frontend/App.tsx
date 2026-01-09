@@ -9,6 +9,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  useColorScheme,
   StyleSheet,
   Text,
   TextInput,
@@ -71,6 +72,424 @@ const keypadLayout = [
 
 const CONTAINER_BOTTOM_PADDING = 16;
 
+type ThemeName = 'light' | 'dark';
+
+type Theme = {
+  screen: string;
+  card: string;
+  cardActive: string;
+  cardInactive: string;
+  cardBorder: string;
+  shadow: string;
+  selectorText: string;
+  selectorChevron: string;
+  amountSymbol: string;
+  amountText: string;
+  amountMuted: string;
+  label: string;
+  divider: string;
+  swapBackground: string;
+  swapIcon: string;
+  rateText: string;
+  statusText: string;
+  keypadBackground: string;
+  keypadBorder: string;
+  keyBackground: string;
+  keyGhost: string;
+  keyBackspace: string;
+  keyPressed: string;
+  keyPressedBackspace: string;
+  keyLabel: string;
+  keyLabelInverse: string;
+  keyRipple: string;
+  keyRippleStrong: string;
+  modalShade: string;
+  modalCard: string;
+  modalTitle: string;
+  searchBackground: string;
+  searchBorder: string;
+  searchText: string;
+  placeholder: string;
+  currencyName: string;
+  rowDivider: string;
+  closeText: string;
+  statusBarStyle: 'light' | 'dark';
+};
+
+const themes: Record<ThemeName, Theme> = {
+  light: {
+    screen: '#fff',
+    card: '#fff',
+    cardActive: '#f7f7fa',
+    cardInactive: '#fff',
+    cardBorder: '#e5e7eb',
+    shadow: '#0f172a',
+    selectorText: '#1f2937',
+    selectorChevron: '#6b7280',
+    amountSymbol: '#9ca3af',
+    amountText: '#111827',
+    amountMuted: '#d1d5db',
+    label: '#6b7280',
+    divider: '#e5e7eb',
+    swapBackground: '#000',
+    swapIcon: '#fff',
+    rateText: '#111827',
+    statusText: '#0f172a',
+    keypadBackground: '#f3f4f6',
+    keypadBorder: '#e5e7eb',
+    keyBackground: '#fff',
+    keyGhost: '#f8fafc',
+    keyBackspace: '#0f172a',
+    keyPressed: '#eef2ff',
+    keyPressedBackspace: '#111827',
+    keyLabel: '#0f172a',
+    keyLabelInverse: '#fff',
+    keyRipple: '#e5e7eb',
+    keyRippleStrong: '#1f2937',
+    modalShade: 'rgba(205, 156, 156, 0.25)',
+    modalCard: '#fff',
+    modalTitle: '#0f172a',
+    searchBackground: '#f8fafc',
+    searchBorder: '#e5e7eb',
+    searchText: '#0f172a',
+    placeholder: '#94a3b8',
+    currencyName: '#6b7280',
+    rowDivider: '#eceff4',
+    closeText: '#111827',
+    statusBarStyle: 'dark',
+  },
+  dark: {
+    screen: '#0b1220',
+    card: '#0f172a',
+    cardActive: '#111c2d',
+    cardInactive: '#0f172a',
+    cardBorder: '#1f2937',
+    shadow: '#000',
+    selectorText: '#e5e7eb',
+    selectorChevron: '#cbd5e1',
+    amountSymbol: '#cbd5e1',
+    amountText: '#e5e7eb',
+    amountMuted: '#475569',
+    label: '#cbd5e1',
+    divider: '#1f2937',
+    swapBackground: '#f59e0b',
+    swapIcon: '#0b1220',
+    rateText: '#e2e8f0',
+    statusText: '#0b1220',
+    keypadBackground: '#111827',
+    keypadBorder: '#1f2937',
+    keyBackground: '#0f172a',
+    keyGhost: '#111827',
+    keyBackspace: '#f59e0b',
+    keyPressed: '#1e293b',
+    keyPressedBackspace: '#fbbf24',
+    keyLabel: '#e2e8f0',
+    keyLabelInverse: '#0b1220',
+    keyRipple: '#1f2937',
+    keyRippleStrong: '#fcd34d',
+    modalShade: 'rgba(8, 15, 26, 0.7)',
+    modalCard: '#0f172a',
+    modalTitle: '#e5e7eb',
+    searchBackground: '#111827',
+    searchBorder: '#1f2937',
+    searchText: '#e2e8f0',
+    placeholder: '#94a3b8',
+    currencyName: '#cbd5e1',
+    rowDivider: '#1f2937',
+    closeText: '#e5e7eb',
+    statusBarStyle: 'light',
+  },
+};
+
+const createStyles = (theme: Theme) =>
+  StyleSheet.create({
+    flex: { flex: 1 },
+    screen: {
+      flex: 1,
+      backgroundColor: theme.screen,
+    },
+    container: {
+      flex: 1,
+      width: '100%',
+      maxWidth: 460,
+      alignSelf: 'center',
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: CONTAINER_BOTTOM_PADDING,
+      gap: 16,
+    },
+    topBar: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 6,
+      marginBottom: 4,
+    },
+    appTitle: {
+      color: theme.amountText,
+      fontSize: 20,
+      fontWeight: '800',
+      letterSpacing: 0.5,
+    },
+    sectionStack: {
+      flex: 1,
+      borderRadius: 24,
+      overflow: 'hidden',
+      backgroundColor: theme.cardInactive,
+      borderWidth: 1,
+      borderColor: theme.cardBorder,
+      position: 'relative',
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.12,
+      shadowRadius: 18,
+      elevation: 10,
+    },
+    section: {
+      flex: 1,
+      paddingHorizontal: 24,
+      paddingVertical: 24,
+    },
+    sectionActive: {
+      backgroundColor: theme.cardActive,
+    },
+    sectionInactive: {
+      backgroundColor: theme.cardInactive,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 14,
+    },
+    selector: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+    },
+    selectorCode: {
+      color: theme.selectorText,
+      fontSize: 24,
+      fontWeight: '700',
+    },
+    selectorChevron: {
+      color: theme.selectorChevron,
+      fontSize: 18,
+    },
+    amountRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 8,
+    },
+    amountSymbol: {
+      color: theme.amountSymbol,
+      fontSize: 30,
+      marginBottom: 2,
+    },
+    amountText: {
+      color: theme.amountText,
+      fontSize: 50,
+      fontWeight: '200',
+      letterSpacing: 0.5,
+    },
+    amountMuted: {
+      color: theme.amountMuted,
+    },
+    currencyLabel: {
+      marginTop: 8,
+      color: theme.label,
+      fontSize: 14,
+    },
+    divider: {
+      height: 1,
+      backgroundColor: theme.divider,
+    },
+    swapButton: {
+      position: 'absolute',
+      top: '50%',
+      left: '50%',
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: theme.swapBackground,
+      alignItems: 'center',
+      justifyContent: 'center',
+      transform: [{ translateX: -32 }, { translateY: -32 }],
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 10 },
+      shadowOpacity: 0.2,
+      shadowRadius: 14,
+      elevation: 12,
+      zIndex: 5,
+    },
+    swapIcon: {
+      color: theme.swapIcon,
+      fontWeight: '800',
+      fontSize: 22,
+    },
+    rateRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 6,
+    },
+    rateText: {
+      color: theme.rateText,
+      fontSize: 14,
+      fontWeight: '700',
+    },
+    statusPill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: 999,
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+    },
+    statusText: {
+      color: theme.statusText,
+      fontWeight: '700',
+      fontSize: 12,
+    },
+    keypad: {
+      backgroundColor: theme.keypadBackground,
+      borderRadius: 16,
+      padding: 12,
+      borderWidth: 1,
+      borderColor: theme.keypadBorder,
+      gap: 10,
+    },
+    keyRow: {
+      flexDirection: 'row',
+      gap: 10,
+    },
+    key: {
+      flex: 1,
+      height: 56,
+      borderRadius: 12,
+      backgroundColor: theme.keyBackground,
+      alignItems: 'center',
+      justifyContent: 'center',
+      shadowColor: theme.shadow,
+      shadowOffset: { width: 0, height: 6 },
+      shadowOpacity: 0.08,
+      shadowRadius: 10,
+      elevation: 5,
+    },
+    keyGhost: {
+      backgroundColor: theme.keyGhost,
+    },
+    keyBackspace: {
+      backgroundColor: theme.keyBackspace,
+    },
+    keyPressed: {
+      transform: [{ scale: 0.96 }],
+      backgroundColor: theme.keyPressed,
+      shadowOpacity: 0.04,
+    },
+    keyPressedBackspace: {
+      backgroundColor: theme.keyPressedBackspace,
+      opacity: 0.9,
+    },
+    keyLabel: {
+      color: theme.keyLabel,
+      fontSize: 22,
+      fontWeight: '500',
+    },
+    keyLabelInverse: {
+      color: theme.keyLabelInverse,
+      fontWeight: '700',
+    },
+    modalBackdrop: {
+      flex: 1,
+      backgroundColor: 'transparent',
+      justifyContent: 'flex-end',
+    },
+    modalShade: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: theme.modalShade,
+    },
+    modalAvoider: {
+      width: '100%',
+      flex: 1,
+      justifyContent: 'flex-end',
+    },
+    modalCard: {
+      backgroundColor: theme.modalCard,
+      borderTopLeftRadius: 24,
+      borderTopRightRadius: 24,
+      paddingHorizontal: 20,
+      paddingTop: 16,
+      paddingBottom: 12,
+      maxHeight: '85%',
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 12,
+    },
+    modalTitle: {
+      color: theme.modalTitle,
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    searchInput: {
+      backgroundColor: theme.searchBackground,
+      color: theme.searchText,
+      borderRadius: 12,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.searchBorder,
+    },
+    modalList: {
+      paddingBottom: 12,
+    },
+    currencyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingVertical: 12,
+    },
+    currencyTextBlock: {
+      flex: 1,
+    },
+    currencyCodeText: {
+      color: theme.selectorText,
+      fontWeight: '700',
+      fontSize: 16,
+    },
+    currencyNameText: {
+      color: theme.currencyName,
+      marginTop: 2,
+    },
+    currencyCheck: {
+      color: theme.selectorText,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    rowDivider: {
+      height: 1,
+      backgroundColor: theme.rowDivider,
+    },
+    closeButton: {
+      paddingVertical: 12,
+      alignItems: 'center',
+      marginTop: 6,
+    },
+    closeText: {
+      color: theme.closeText,
+      fontWeight: '700',
+      fontSize: 15,
+    },
+  });
+
+type AppStyles = ReturnType<typeof createStyles>;
+
 type SectionProps = {
   currency: string;
   currencyName?: string;
@@ -79,6 +498,7 @@ type SectionProps = {
   active: boolean;
   onFocus: () => void;
   onCurrencyPress: () => void;
+  styles: AppStyles;
 };
 
 const CurrencySection = ({
@@ -89,6 +509,7 @@ const CurrencySection = ({
   active,
   onFocus,
   onCurrencyPress,
+  styles,
 }: SectionProps) => {
   const displayAmount = amount === '' ? '0' : amount;
 
@@ -127,6 +548,8 @@ type PickerProps = {
   selected: string;
   searchTerm: string;
   bottomOffset: number;
+  styles: AppStyles;
+  theme: Theme;
   onSearch: (value: string) => void;
   onSelect: (code: string) => void;
   onClose: () => void;
@@ -139,6 +562,8 @@ const CurrencyPicker = ({
   selected,
   searchTerm,
   bottomOffset,
+  styles,
+  theme,
   onSearch,
   onSelect,
   onClose,
@@ -165,7 +590,7 @@ const CurrencyPicker = ({
                 value={searchTerm}
                 onChangeText={onSearch}
                 placeholder="Rechercher un code ou nom…"
-                placeholderTextColor="#94a3b8"
+                placeholderTextColor={theme.placeholder}
                 style={styles.searchInput}
                 autoFocus
               />
@@ -205,9 +630,11 @@ const CurrencyPicker = ({
 type KeypadProps = {
   onPressKey: (key: string) => void;
   onLayout?: (event: LayoutChangeEvent) => void;
+  styles: AppStyles;
+  theme: Theme;
 };
 
-const Keypad = ({ onPressKey, onLayout }: KeypadProps) => (
+const Keypad = ({ onPressKey, onLayout, styles, theme }: KeypadProps) => (
   <View style={styles.keypad} onLayout={onLayout}>
     {keypadLayout.map((row, rowIndex) => (
       <View key={rowIndex} style={styles.keyRow}>
@@ -225,7 +652,7 @@ const Keypad = ({ onPressKey, onLayout }: KeypadProps) => (
                 pressed ? styles.keyPressed : null,
                 pressed && isBackspace ? styles.keyPressedBackspace : null,
               ]}
-              android_ripple={{ color: isBackspace ? '#1f2937' : '#e5e7eb' }}
+              android_ripple={{ color: isBackspace ? theme.keyRippleStrong : theme.keyRipple }}
               onPress={() => onPressKey(key)}
             >
               <Text
@@ -245,7 +672,7 @@ const Keypad = ({ onPressKey, onLayout }: KeypadProps) => (
 );
 
 function AppContent() {
-  const apiKey = process.env.EXCHANGERATE_API_KEY;
+  const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
   const [currencies, setCurrencies] = useState<string[]>([...fallbackCurrencies]);
   const [currencyNames, setCurrencyNames] = useState<Record<string, string>>(fallbackNames);
   const [rates, setRates] = useState<Record<string, number>>(deriveRatesFromFallback('USD'));
@@ -261,6 +688,14 @@ function AppContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [keypadHeight, setKeypadHeight] = useState(0);
   const { bottom: insetBottom } = useSafeAreaInsets();
+  const systemScheme = useColorScheme();
+  const themeName: ThemeName = systemScheme === 'dark' ? 'dark' : 'light';
+  const theme = useMemo(() => themes[themeName], [themeName]);
+  const styles = useMemo(() => createStyles(theme), [theme]);
+
+  useEffect(() => {
+    console.log('[env] EXPO_PUBLIC_API_BASE_URL =', apiBaseUrl);
+  }, [apiBaseUrl]);
 
   const statusColor = useMemo(() => {
     if (loading) return '#f59e0b';
@@ -275,7 +710,8 @@ function AppContent() {
   useEffect(() => {
     const loadSymbolsAndRates = async () => {
       setLoading(true);
-      if (!apiKey) {
+      if (!apiBaseUrl) {
+        console.log('[rates] missing EXPO_PUBLIC_API_BASE_URL, using fallback data');
         setCurrencies([...fallbackCurrencies]);
         setCurrencyNames(fallbackNames);
         setRates(deriveRatesFromFallback('USD'));
@@ -284,8 +720,11 @@ function AppContent() {
         return;
       }
 
-      const codesUrl = `https://v6.exchangerate-api.com/v6/${apiKey}/codes`;
-      const ratesUrl = `https://v6.exchangerate-api.com/v6/${apiKey}/latest/USD`;
+      const trimmedBase = apiBaseUrl.replace(/\/$/, '');
+      const codesUrl = `${trimmedBase}/codes`;
+      const ratesUrl = `${trimmedBase}/rates?base=USD`;
+
+      console.log('[rates] fetching', { codesUrl, ratesUrl });
 
       try {
         const [codesRes, ratesRes] = await Promise.all([fetch(codesUrl), fetch(ratesUrl)]);
@@ -293,8 +732,16 @@ function AppContent() {
         const codesJson = codesRes.ok ? await codesRes.json() : null;
         const ratesJson = ratesRes.ok ? await ratesRes.json() : null;
 
-        const codesSuccess = codesJson?.result === 'success' && Array.isArray(codesJson.supported_codes);
-        const ratesSuccess = ratesJson?.result === 'success' && ratesJson.conversion_rates;
+        const codesSuccess =
+          codesRes.ok && codesJson?.result === 'success' && Array.isArray(codesJson.supported_codes);
+        const ratesSuccess = ratesRes.ok && ratesJson?.result === 'success' && ratesJson.conversion_rates;
+
+        console.log('[rates] responses', {
+          codesStatus: codesRes.status,
+          ratesStatus: ratesRes.status,
+          codesSuccess,
+          ratesSuccess,
+        });
 
         if (codesSuccess) {
           const pairs = codesJson.supported_codes as [string, string][];
@@ -303,6 +750,7 @@ function AppContent() {
           setCurrencies(codes);
           setCurrencyNames(names);
         } else {
+          console.log('[rates] codes failed, using fallback codes');
           setCurrencies([...fallbackCurrencies]);
           setCurrencyNames(fallbackNames);
         }
@@ -312,11 +760,13 @@ function AppContent() {
           const baseCode = (ratesJson.base_code as string) || 'USD';
           setRates({ ...incoming, [baseCode]: 1 });
         } else {
+          console.log('[rates] rates failed, using fallback rates');
           setRates(deriveRatesFromFallback('USD'));
         }
 
         setUsingFallback(!(codesSuccess && ratesSuccess));
-      } catch {
+      } catch (error) {
+        console.log('[rates] fetch failed, using fallback', error);
         setCurrencies([...fallbackCurrencies]);
         setCurrencyNames(fallbackNames);
         setRates(deriveRatesFromFallback('USD'));
@@ -327,7 +777,7 @@ function AppContent() {
     };
 
     loadSymbolsAndRates();
-  }, [apiKey]);
+  }, [apiBaseUrl]);
 
   useEffect(() => {
     if (activeInput === 'from') {
@@ -438,6 +888,7 @@ function AppContent() {
                 active={activeInput === 'from'}
                 onFocus={() => setFromValue('0')}
                 onCurrencyPress={() => openModal('from')}
+                styles={styles}
               />
               <View style={styles.divider} />
               <CurrencySection
@@ -448,6 +899,7 @@ function AppContent() {
                 active={activeInput === 'to'}
                 onFocus={() => setToValue('0')}
                 onCurrencyPress={() => openModal('to')}
+                styles={styles}
               />
 
               <Pressable style={styles.swapButton} onPress={swap}>
@@ -469,6 +921,8 @@ function AppContent() {
             <Keypad
               onPressKey={handleKeyPress}
               onLayout={(event) => setKeypadHeight(event.nativeEvent.layout.height)}
+              styles={styles}
+              theme={theme}
             />
           </View>
         </KeyboardAvoidingView>
@@ -481,12 +935,14 @@ function AppContent() {
         selected={modalTarget === 'from' ? fromCurrency : toCurrency}
         searchTerm={searchTerm}
         bottomOffset={modalBottomOffset}
+        styles={styles}
+        theme={theme}
         onSearch={setSearchTerm}
         onSelect={selectCurrency}
         onClose={closeModal}
       />
 
-      <StatusBar style="dark" />
+      <StatusBar style={theme.statusBarStyle} />
     </SafeAreaView>
   );
 }
@@ -498,276 +954,3 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  screen: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  container: {
-    flex: 1,
-    width: '100%',
-    maxWidth: 460,
-    alignSelf: 'center',
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: CONTAINER_BOTTOM_PADDING,
-    gap: 16,
-  },
-  sectionStack: {
-    flex: 1,
-    borderRadius: 24,
-    overflow: 'hidden',
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    position: 'relative',
-    shadowColor: '#0f172a',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.12,
-    shadowRadius: 18,
-    elevation: 10,
-  },
-  section: {
-    flex: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 24,
-  },
-  sectionActive: {
-    backgroundColor: '#f7f7fa',
-  },
-  sectionInactive: {
-    backgroundColor: '#fff',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 14,
-  },
-  selector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  selectorCode: {
-    color: '#1f2937',
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  selectorChevron: {
-    color: '#6b7280',
-    fontSize: 18,
-  },
-  amountRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-  },
-  amountSymbol: {
-    color: '#9ca3af',
-    fontSize: 30,
-    marginBottom: 2,
-  },
-  amountText: {
-    color: '#111827',
-    fontSize: 50,
-    fontWeight: '200',
-    letterSpacing: 0.5,
-  },
-  amountMuted: {
-    color: '#d1d5db',
-  },
-  currencyLabel: {
-    marginTop: 8,
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: '#e5e7eb',
-  },
-  swapButton: {
-    position: 'absolute',
-    top: '50%',
-    left: '50%',
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#000',
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ translateX: -32 }, { translateY: -32 }],
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 14,
-    elevation: 12,
-    zIndex: 5,
-  },
-  swapIcon: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: 22,
-  },
-  rateRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 6,
-  },
-  rateText: {
-    color: '#111827',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  statusPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-  },
-  statusText: {
-    color: '#0f172a',
-    fontWeight: '700',
-    fontSize: 12,
-  },
-  keypad: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: 16,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    gap: 10,
-  },
-  keyRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  key: {
-    flex: 1,
-    height: 56,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#111827',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    elevation: 5,
-  },
-  keyGhost: {
-    backgroundColor: '#f8fafc',
-  },
-  keyBackspace: {
-    backgroundColor: '#0f172a',
-  },
-  keyPressed: {
-    transform: [{ scale: 0.96 }],
-    backgroundColor: '#eef2ff',
-    shadowOpacity: 0.04,
-  },
-  keyPressedBackspace: {
-    backgroundColor: '#111827',
-    opacity: 0.9,
-  },
-  keyLabel: {
-    color: '#0f172a',
-    fontSize: 22,
-    fontWeight: '500',
-  },
-  keyLabelInverse: {
-    color: '#fff',
-    fontWeight: '700',
-  },
-  modalBackdrop: {
-    flex: 1,
-    backgroundColor: 'transparent',
-    justifyContent: 'flex-end',
-  },
-  modalShade: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(205, 156, 156, 0.25)',
-  },
-  modalAvoider: {
-    width: '100%',
-    flex: 1,
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    maxHeight: '85%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  modalTitle: {
-    color: '#0f172a',
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  searchInput: {
-    backgroundColor: '#f8fafc',
-    color: '#0f172a',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  modalList: {
-    paddingBottom: 12,
-  },
-  currencyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  currencyTextBlock: {
-    flex: 1,
-  },
-  currencyCodeText: {
-    color: '#0f172a',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  currencyNameText: {
-    color: '#6b7280',
-    marginTop: 2,
-  },
-  currencyCheck: {
-    color: '#0f172a',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  rowDivider: {
-    height: 1,
-    backgroundColor: '#eceff4',
-  },
-  closeButton: {
-    paddingVertical: 12,
-    alignItems: 'center',
-    marginTop: 6,
-  },
-  closeText: {
-    color: '#111827',
-    fontWeight: '700',
-    fontSize: 15,
-  },
-});
