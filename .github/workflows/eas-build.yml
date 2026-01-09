@@ -26,57 +26,7 @@ jobs:
       - name: Install EAS CLI
         run: npm install -g eas-cli
 
-      - name: Build with EAS
+      - name: Build for preview
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
-        run: |
-          eas build --platform android --profile production --non-interactive --wait --json > eas-build.json
-          ANDROID_ARTIFACT_URL=$(cat eas-build.json | jq -r '.[] | select(.platform=="android") | .artifacts.buildUrl')
-          if [ -z "$ANDROID_ARTIFACT_URL" ]; then
-            echo "Android build artifact URL not found" >&2
-            cat eas-build.json
-            exit 1
-          fi
-          mkdir -p artifacts
-          curl -L "$ANDROID_ARTIFACT_URL" -o artifacts/app-release.aab
-
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: 17
-
-      - name: Download bundletool
-        run: curl -L https://github.com/google/bundletool/releases/download/1.17.2/bundletool-all-1.17.2.jar -o bundletool.jar
-
-      - name: Prepare signing keystore
-        env:
-          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-        run: |
-          if [ -z "$ANDROID_KEYSTORE_BASE64" ]; then
-            echo "ANDROID_KEYSTORE_BASE64 is not set" >&2
-            exit 1
-          fi
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > android.keystore
-
-      - name: Build universal APK with bundletool
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: |
-          java -jar bundletool.jar build-apks \
-            --bundle=artifacts/app-release.aab \
-            --output=artifacts/app-release.apks \
-            --mode=universal \
-            --ks=android.keystore \
-            --ks-pass=pass:$ANDROID_KEYSTORE_PASSWORD \
-            --ks-key-alias=$ANDROID_KEY_ALIAS \
-            --key-pass=pass:$ANDROID_KEY_PASSWORD
-          unzip -p artifacts/app-release.apks universal.apk > artifacts/app-universal.apk
-
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: android-universal-apk
-          path: artifacts/app-universal.apk
+        run: eas build -p android --profile preview
