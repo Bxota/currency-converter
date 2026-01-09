@@ -1,4 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
+import * as Haptics from 'expo-haptics';
 import { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
@@ -210,33 +211,41 @@ const Keypad = ({ onPressKey, onLayout }: KeypadProps) => (
   <View style={styles.keypad} onLayout={onLayout}>
     {keypadLayout.map((row, rowIndex) => (
       <View key={rowIndex} style={styles.keyRow}>
-        {row.map((key) => (
-          <Pressable
-            key={key}
-            style={[
-              styles.key,
-              key === 'backspace' ? styles.keyBackspace : null,
-              key === '.' ? styles.keyGhost : null,
-            ]}
-            onPress={() => onPressKey(key)}
-          >
-            <Text
-              style={[
-                styles.keyLabel,
-                key === 'backspace' ? styles.keyLabelInverse : null,
+        {row.map((key) => {
+          const isBackspace = key === 'backspace';
+          const isGhost = key === '.';
+
+          return (
+            <Pressable
+              key={key}
+              style={({ pressed }) => [
+                styles.key,
+                isBackspace ? styles.keyBackspace : null,
+                isGhost ? styles.keyGhost : null,
+                pressed ? styles.keyPressed : null,
+                pressed && isBackspace ? styles.keyPressedBackspace : null,
               ]}
+              android_ripple={{ color: isBackspace ? '#1f2937' : '#e5e7eb' }}
+              onPress={() => onPressKey(key)}
             >
-              {key === 'backspace' ? '⌫' : key}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={[
+                  styles.keyLabel,
+                  isBackspace ? styles.keyLabelInverse : null,
+                ]}
+              >
+                {isBackspace ? '⌫' : key}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
     ))}
   </View>
 );
 
 function AppContent() {
-  const apiKey = process.env.EXPO_PUBLIC_EXCHANGERATE_API_KEY;
+  const apiKey = process.env.EXCHANGERATE_API_KEY;
   const [currencies, setCurrencies] = useState<string[]>([...fallbackCurrencies]);
   const [currencyNames, setCurrencyNames] = useState<Record<string, string>>(fallbackNames);
   const [rates, setRates] = useState<Record<string, number>>(deriveRatesFromFallback('USD'));
@@ -347,6 +356,8 @@ function AppContent() {
   };
 
   const handleKeyPress = (key: string) => {
+    void Haptics.selectionAsync();
+
     const current = activeInput === 'from' ? amountFrom : amountTo;
     let next = current || '';
 
@@ -653,6 +664,15 @@ const styles = StyleSheet.create({
   },
   keyBackspace: {
     backgroundColor: '#0f172a',
+  },
+  keyPressed: {
+    transform: [{ scale: 0.96 }],
+    backgroundColor: '#eef2ff',
+    shadowOpacity: 0.04,
+  },
+  keyPressedBackspace: {
+    backgroundColor: '#111827',
+    opacity: 0.9,
   },
   keyLabel: {
     color: '#0f172a',
