@@ -1,19 +1,20 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useState } from 'react';
 import {
+  FlatList,
+  Keyboard as RNKeyboard,
   KeyboardAvoidingView,
-  TouchableWithoutFeedback,
-  Keyboard,
+  LayoutChangeEvent,
+  Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
+  TouchableWithoutFeedback,
   View,
-  Pressable,
-  Modal,
-  FlatList,
 } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const fallbackCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF'] as const;
 
@@ -37,41 +38,211 @@ const baseRates: Record<(typeof fallbackCurrencies)[number], number> = {
   CHF: 0.86,
 };
 
-const currencyFlags: Record<string, string> = {
-  USD: '🇺🇸',
-  EUR: '🇪🇺',
-  GBP: '🇬🇧',
-  JPY: '🇯🇵',
-  CAD: '🇨🇦',
-  AUD: '🇦🇺',
-  CHF: '🇨🇭',
+const currencySymbols: Record<string, string> = {
+  USD: '$',
+  EUR: '€',
+  GBP: '£',
+  JPY: '¥',
+  CAD: 'CA$',
+  AUD: 'A$',
+  CHF: 'CHF',
 };
 
 const sanitizeNumber = (value: string) => value.replace(/[^0-9.,]/g, '');
 const parseNumber = (value: string) => Number(value.replace(',', '.'));
-const formatAmount = (value: number) =>
-  Number.isFinite(value) ? value.toFixed(2) : '0.00';
+const formatAmount = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00');
 
 const deriveRatesFromFallback = (base: string) => {
   if (!baseRates[base as keyof typeof baseRates]) return baseRates;
   const usdPerBase = 1 / baseRates[base as keyof typeof baseRates];
-  const entries = Object.entries(baseRates).map(([code, rate]) => [
-    code,
-    usdPerBase * rate,
-  ]);
+  const entries = Object.entries(baseRates).map(([code, rate]) => [code, usdPerBase * rate]);
   return Object.fromEntries(entries) as Record<string, number>;
 };
 
 type Target = 'from' | 'to';
 
-export default function App() {
+const keypadLayout = [
+  ['1', '2', '3'],
+  ['4', '5', '6'],
+  ['7', '8', '9'],
+  ['.', '0', 'backspace'],
+];
+
+const CONTAINER_BOTTOM_PADDING = 16;
+
+type SectionProps = {
+  currency: string;
+  currencyName?: string;
+  symbol: string;
+  amount: string;
+  active: boolean;
+  onFocus: () => void;
+  onCurrencyPress: () => void;
+};
+
+const CurrencySection = ({
+  currency,
+  currencyName,
+  symbol,
+  amount,
+  active,
+  onFocus,
+  onCurrencyPress,
+}: SectionProps) => {
+  const displayAmount = amount === '' ? '0' : amount;
+
+  return (
+    <Pressable
+      style={[styles.section, active ? styles.sectionActive : styles.sectionInactive]}
+      onPress={onFocus}
+    >
+      <View style={styles.sectionHeader}>
+        <Pressable
+          style={styles.selector}
+          onPress={(event) => {
+            event.stopPropagation();
+            onCurrencyPress();
+          }}
+        >
+          <Text style={styles.selectorCode}>{currency}</Text>
+          <Text style={styles.selectorChevron}>⌄</Text>
+        </Pressable>
+      </View>
+      <View style={styles.amountRow}>
+        <Text style={styles.amountSymbol}>{symbol}</Text>
+        <Text style={[styles.amountText, !active && styles.amountMuted]} numberOfLines={1}>
+          {displayAmount}
+        </Text>
+      </View>
+      <Text style={styles.currencyLabel}>{currencyName ?? 'Devise'}</Text>
+    </Pressable>
+  );
+};
+
+type PickerProps = {
+  visible: boolean;
+  currencies: string[];
+  currencyNames: Record<string, string>;
+  selected: string;
+  searchTerm: string;
+  bottomOffset: number;
+  onSearch: (value: string) => void;
+  onSelect: (code: string) => void;
+  onClose: () => void;
+};
+
+const CurrencyPicker = ({
+  visible,
+  currencies,
+  currencyNames,
+  selected,
+  searchTerm,
+  bottomOffset,
+  onSearch,
+  onSelect,
+  onClose,
+}: PickerProps) => (
+  <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+    <TouchableWithoutFeedback onPress={onClose} accessible={false}>
+      <View style={styles.modalBackdrop}>
+        <View style={[styles.modalShade, { bottom: bottomOffset || 0 }]} />
+        <TouchableWithoutFeedback>
+          <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+            style={[styles.modalAvoider, { paddingBottom: bottomOffset || 0 }]}
+          >
+            <View style={styles.modalCard}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Choisir une monnaie</Text>
+                <Pressable onPress={onClose} hitSlop={10}>
+                  <Text style={styles.selectorChevron}>✕</Text>
+                </Pressable>
+              </View>
+
+              <TextInput
+                value={searchTerm}
+                onChangeText={onSearch}
+                placeholder="Rechercher un code ou nom…"
+                placeholderTextColor="#94a3b8"
+                style={styles.searchInput}
+                autoFocus
+              />
+
+              <FlatList
+                data={currencies}
+                keyExtractor={(item) => item}
+                renderItem={({ item }) => {
+                  const name = currencyNames[item] ?? '—';
+                  const isSelected = item === selected;
+                  return (
+                    <Pressable style={styles.currencyRow} onPress={() => onSelect(item)}>
+                      <View style={styles.currencyTextBlock}>
+                        <Text style={styles.currencyCodeText}>{item}</Text>
+                        <Text style={styles.currencyNameText}>{name}</Text>
+                      </View>
+                      {isSelected ? <Text style={styles.currencyCheck}>✓</Text> : null}
+                    </Pressable>
+                  );
+                }}
+                ItemSeparatorComponent={() => <View style={styles.rowDivider} />}
+                contentContainerStyle={styles.modalList}
+                keyboardShouldPersistTaps="handled"
+              />
+
+              <Pressable style={styles.closeButton} onPress={onClose}>
+                <Text style={styles.closeText}>Fermer</Text>
+              </Pressable>
+            </View>
+          </KeyboardAvoidingView>
+        </TouchableWithoutFeedback>
+      </View>
+    </TouchableWithoutFeedback>
+  </Modal>
+);
+
+type KeypadProps = {
+  onPressKey: (key: string) => void;
+  onLayout?: (event: LayoutChangeEvent) => void;
+};
+
+const Keypad = ({ onPressKey, onLayout }: KeypadProps) => (
+  <View style={styles.keypad} onLayout={onLayout}>
+    {keypadLayout.map((row, rowIndex) => (
+      <View key={rowIndex} style={styles.keyRow}>
+        {row.map((key) => (
+          <Pressable
+            key={key}
+            style={[
+              styles.key,
+              key === 'backspace' ? styles.keyBackspace : null,
+              key === '.' ? styles.keyGhost : null,
+            ]}
+            onPress={() => onPressKey(key)}
+          >
+            <Text
+              style={[
+                styles.keyLabel,
+                key === 'backspace' ? styles.keyLabelInverse : null,
+              ]}
+            >
+              {key === 'backspace' ? '⌫' : key}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+    ))}
+  </View>
+);
+
+function AppContent() {
   const apiKey = process.env.EXPO_PUBLIC_EXCHANGERATE_API_KEY;
   const [currencies, setCurrencies] = useState<string[]>([...fallbackCurrencies]);
   const [currencyNames, setCurrencyNames] = useState<Record<string, string>>(fallbackNames);
   const [rates, setRates] = useState<Record<string, number>>(deriveRatesFromFallback('USD'));
   const [fromCurrency, setFromCurrency] = useState<string>('EUR');
   const [toCurrency, setToCurrency] = useState<string>('USD');
-  const [amountFrom, setAmountFrom] = useState('100');
+  const [amountFrom, setAmountFrom] = useState('0');
   const [amountTo, setAmountTo] = useState('0.00');
   const [activeInput, setActiveInput] = useState<Target>('from');
   const [modalVisible, setModalVisible] = useState(false);
@@ -79,6 +250,8 @@ export default function App() {
   const [usingFallback, setUsingFallback] = useState(false);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [keypadHeight, setKeypadHeight] = useState(0);
+  const { bottom: insetBottom } = useSafeAreaInsets();
 
   const statusColor = useMemo(() => {
     if (loading) return '#f59e0b';
@@ -91,7 +264,6 @@ export default function App() {
   }, [fromCurrency, toCurrency, rates]);
 
   useEffect(() => {
-    console.log('[API] init fetch', { hasApiKey: Boolean(apiKey) });
     const loadSymbolsAndRates = async () => {
       setLoading(true);
       if (!apiKey) {
@@ -100,7 +272,6 @@ export default function App() {
         setRates(deriveRatesFromFallback('USD'));
         setUsingFallback(true);
         setLoading(false);
-        console.log('[API] missing api key, fallback');
         return;
       }
 
@@ -109,16 +280,12 @@ export default function App() {
 
       try {
         const [codesRes, ratesRes] = await Promise.all([fetch(codesUrl), fetch(ratesUrl)]);
-        console.log('[API] responses', { codesStatus: codesRes.status, ratesStatus: ratesRes.status });
 
         const codesJson = codesRes.ok ? await codesRes.json() : null;
         const ratesJson = ratesRes.ok ? await ratesRes.json() : null;
-        console.log('[API] codes json', codesJson);
-        console.log('[API] rates json', ratesJson);
 
         const codesSuccess = codesJson?.result === 'success' && Array.isArray(codesJson.supported_codes);
         const ratesSuccess = ratesJson?.result === 'success' && ratesJson.conversion_rates;
-        console.log('[API] parsed', { codesSuccess, ratesSuccess });
 
         if (codesSuccess) {
           const pairs = codesJson.supported_codes as [string, string][];
@@ -126,9 +293,7 @@ export default function App() {
           const names = Object.fromEntries(pairs);
           setCurrencies(codes);
           setCurrencyNames(names);
-          console.log('[API] codes loaded', codes.length);
         } else {
-          console.log('Failed to load currency codes, using fallback.', codesJson);
           setCurrencies([...fallbackCurrencies]);
           setCurrencyNames(fallbackNames);
         }
@@ -137,39 +302,23 @@ export default function App() {
           const incoming = ratesJson.conversion_rates as Record<string, number>;
           const baseCode = (ratesJson.base_code as string) || 'USD';
           setRates({ ...incoming, [baseCode]: 1 });
-          console.log('[API] rates loaded', Object.keys(ratesJson.conversion_rates || {}).length);
         } else {
           setRates(deriveRatesFromFallback('USD'));
-          console.log('[API] rates fallback', ratesJson);
         }
 
         setUsingFallback(!(codesSuccess && ratesSuccess));
-      } catch (error) {
+      } catch {
         setCurrencies([...fallbackCurrencies]);
         setCurrencyNames(fallbackNames);
         setRates(deriveRatesFromFallback('USD'));
         setUsingFallback(true);
-        console.log('[API] error, fallback', error);
       } finally {
         setLoading(false);
-        console.log('[API] fetch done');
       }
     };
 
     loadSymbolsAndRates();
   }, [apiKey]);
-
-  useEffect(() => {
-    console.log('[STATE] rate', rate, 'from', fromCurrency, 'to', toCurrency);
-  }, [rate, fromCurrency, toCurrency]);
-
-  useEffect(() => {
-    console.log('[STATE] currencies count', currencies.length);
-  }, [currencies]);
-
-  useEffect(() => {
-    console.log('[STATE] rates count', Object.keys(rates || {}).length);
-  }, [rates]);
 
   useEffect(() => {
     if (activeInput === 'from') {
@@ -181,22 +330,42 @@ export default function App() {
     }
   }, [rate, activeInput, amountFrom, amountTo, fromCurrency, toCurrency]);
 
-  const handleChangeFrom = (value: string) => {
+  const setFromValue = (value: string) => {
     const clean = sanitizeNumber(value);
     setActiveInput('from');
     setAmountFrom(clean);
     const parsed = parseNumber(clean);
     setAmountTo(formatAmount(parsed * rate));
-    console.log('[INPUT] from changed', clean);
   };
 
-  const handleChangeTo = (value: string) => {
+  const setToValue = (value: string) => {
     const clean = sanitizeNumber(value);
     setActiveInput('to');
     setAmountTo(clean);
     const parsed = parseNumber(clean);
     setAmountFrom(formatAmount(parsed / rate));
-    console.log('[INPUT] to changed', clean);
+  };
+
+  const handleKeyPress = (key: string) => {
+    const current = activeInput === 'from' ? amountFrom : amountTo;
+    let next = current || '';
+
+    if (key === 'backspace') {
+      next = next.slice(0, -1);
+    } else if (key === '.') {
+      if (next.includes('.')) {
+        return;
+      }
+      next = next ? `${next}.` : '0.';
+    } else {
+      next = next === '0' ? key : `${next}${key}`;
+    }
+
+    if (activeInput === 'from') {
+      setFromValue(next);
+    } else {
+      setToValue(next);
+    }
   };
 
   const swap = () => {
@@ -207,17 +376,18 @@ export default function App() {
     setToCurrency(prevFrom);
     setAmountFrom(prevAmountTo);
     setActiveInput('from');
-    console.log('[ACTION] swap', { from: prevFrom, to: prevTo });
   };
 
   const openModal = (target: Target) => {
     setModalTarget(target);
     setModalVisible(true);
     setSearchTerm('');
-    console.log('[ACTION] open modal', target);
   };
 
-  const closeModal = () => setModalVisible(false);
+  const closeModal = () => {
+    setModalVisible(false);
+    setSearchTerm('');
+  };
 
   const selectCurrency = (code: string) => {
     if (modalTarget === 'from') {
@@ -225,8 +395,7 @@ export default function App() {
     } else {
       setToCurrency(code);
     }
-    setModalVisible(false);
-    console.log('[ACTION] select currency', { target: modalTarget, code });
+    closeModal();
   };
 
   const filteredCurrencies = useMemo(() => {
@@ -238,134 +407,83 @@ export default function App() {
     });
   }, [currencies, currencyNames, searchTerm]);
 
-  const renderCurrencyRow = ({ item }: { item: string }) => (
-    <Pressable style={styles.currencyRow} onPress={() => selectCurrency(item)}>
-      <Text style={styles.rowFlag}>{currencyFlags[item] ?? '🏳️'}</Text>
-      <View style={styles.rowTextBlock}>
-        <Text style={styles.rowCode}>{item}</Text>
-        <Text style={styles.rowName}>{currencyNames[item] ?? '—'}</Text>
-      </View>
-    </Pressable>
-  );
-
-  const SelectedCurrency = ({
-    code,
-    onPress,
-  }: {
-    code: string;
-    onPress: () => void;
-  }) => (
-    <Pressable onPress={onPress} style={styles.selectedCurrency}>
-      <Text style={styles.badgeFlag}>{currencyFlags[code] ?? '🏳️'}</Text>
-      <Text style={styles.badgeText}>{code}</Text>
-      <Text style={styles.badgeName}>{currencyNames[code] ?? 'Currency'}</Text>
-    </Pressable>
-  );
+  const modalBottomOffset = Math.max(keypadHeight + insetBottom, 0);
 
   return (
+    <SafeAreaView style={styles.screen}>
+      <TouchableWithoutFeedback onPress={RNKeyboard.dismiss} accessible={false}>
+        <KeyboardAvoidingView
+          style={styles.flex}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+        >
+          <View style={styles.container}>
+            <View style={styles.sectionStack}>
+              <CurrencySection
+                currency={fromCurrency}
+                currencyName={currencyNames[fromCurrency]}
+                symbol={currencySymbols[fromCurrency] ?? fromCurrency}
+                amount={amountFrom}
+                active={activeInput === 'from'}
+                onFocus={() => setFromValue('0')}
+                onCurrencyPress={() => openModal('from')}
+              />
+              <View style={styles.divider} />
+              <CurrencySection
+                currency={toCurrency}
+                currencyName={currencyNames[toCurrency]}
+                symbol={currencySymbols[toCurrency] ?? toCurrency}
+                amount={amountTo}
+                active={activeInput === 'to'}
+                onFocus={() => setToValue('0')}
+                onCurrencyPress={() => openModal('to')}
+              />
+
+              <Pressable style={styles.swapButton} onPress={swap}>
+                <Text style={styles.swapIcon}>⇅</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.rateRow}>
+              <Text style={styles.rateText}>
+                1 {fromCurrency} = {rate.toFixed(4)} {toCurrency}
+              </Text>
+              <View style={[styles.statusPill, { backgroundColor: statusColor }]}>
+                <Text style={styles.statusText}>
+                  {loading ? 'Mise à jour' : usingFallback ? 'Taux locaux' : 'Taux en direct'}
+                </Text>
+              </View>
+            </View>
+
+            <Keypad
+              onPressKey={handleKeyPress}
+              onLayout={(event) => setKeypadHeight(event.nativeEvent.layout.height)}
+            />
+          </View>
+        </KeyboardAvoidingView>
+      </TouchableWithoutFeedback>
+
+      <CurrencyPicker
+        visible={modalVisible}
+        currencies={filteredCurrencies}
+        currencyNames={currencyNames}
+        selected={modalTarget === 'from' ? fromCurrency : toCurrency}
+        searchTerm={searchTerm}
+        bottomOffset={modalBottomOffset}
+        onSearch={setSearchTerm}
+        onSelect={selectCurrency}
+        onClose={closeModal}
+      />
+
+      <StatusBar style="dark" />
+    </SafeAreaView>
+  );
+}
+
+export default function App() {
+  return (
     <SafeAreaProvider>
-      <SafeAreaView style={styles.screen}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <KeyboardAvoidingView
-            style={styles.flex}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
-          >
-            <View style={styles.content}>
-              <View style={styles.header}>
-                <Text style={styles.title}>Currency Converter</Text>
-                <View style={styles.statusRow}>
-                  <View style={[styles.statusDot, { backgroundColor: statusColor }]} />
-                  <Text style={styles.statusText}>
-                    {loading ? 'Mise à jour' : usingFallback ? 'Taux locaux' : 'Taux en direct'}
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.split}>
-                <View style={[styles.panel, styles.toPanel]}>
-                  <View style={styles.panelTop}>
-                    <SelectedCurrency code={toCurrency} onPress={() => openModal('to')} />
-                  </View>
-                  <TextInput
-                    value={amountTo}
-                    onChangeText={handleChangeTo}
-                    keyboardType="decimal-pad"
-                    inputMode="decimal"
-                    style={styles.input}
-                    placeholder="0.00"
-                    placeholderTextColor="#6b7280"
-                  />
-                  <Text style={styles.rateLine}>
-                    1 {fromCurrency} = {rate.toFixed(4)} {toCurrency}
-                  </Text>
-                </View>
-
-                <Pressable style={styles.swapButton} onPress={swap}>
-                  <Text style={styles.swapText}>⇄</Text>
-                </Pressable>
-
-                <View style={[styles.panel, styles.fromPanel]}>
-                  <View style={styles.panelTop}>
-                    <SelectedCurrency code={fromCurrency} onPress={() => openModal('from')} />
-                  </View>
-                  <TextInput
-                    value={amountFrom}
-                    onChangeText={handleChangeFrom}
-                    keyboardType="decimal-pad"
-                    inputMode="decimal"
-                    style={styles.input}
-                    placeholder="0.00"
-                    placeholderTextColor="#6b7280"
-                  />
-                </View>
-              </View>
-            </View>
-          </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
-
-        <Modal visible={modalVisible} animationType="slide" transparent onRequestClose={closeModal}>
-          <TouchableWithoutFeedback onPress={closeModal} accessible={false}>
-            <View style={styles.modalBackdrop}>
-              <TouchableWithoutFeedback>
-                <KeyboardAvoidingView
-                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                  keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
-                  style={styles.modalAvoider}
-                >
-                  <View style={styles.modalCard}>
-                    <View style={styles.modalHeader}>
-                      <Text style={styles.modalTitle}>Choisir une monnaie</Text>
-                    </View>
-                    <TextInput
-                      value={searchTerm}
-                      onChangeText={setSearchTerm}
-                      placeholder="Rechercher un code ou nom…"
-                      placeholderTextColor="#6b7280"
-                      style={styles.searchInput}
-                      autoFocus
-                    />
-                    <FlatList
-                      data={filteredCurrencies}
-                      keyExtractor={(item) => item}
-                      renderItem={renderCurrencyRow}
-                      ItemSeparatorComponent={() => <View style={styles.rowDivider} />}
-                      style={styles.modalList}
-                      contentContainerStyle={{ paddingBottom: 20 }}
-                      keyboardShouldPersistTaps="handled"
-                    />
-                    <Pressable style={styles.closeButton} onPress={closeModal}>
-                      <Text style={styles.closeText}>Fermer</Text>
-                    </Pressable>
-                  </View>
-                </KeyboardAvoidingView>
-              </TouchableWithoutFeedback>
-            </View>
-          </TouchableWithoutFeedback>
-        </Modal>
-
-        <StatusBar style="light" />
-      </SafeAreaView>
+      <AppContent />
     </SafeAreaProvider>
   );
 }
@@ -374,218 +492,262 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   screen: {
     flex: 1,
-    backgroundColor: '#0b1222',
-    paddingHorizontal: 16,
-    paddingTop: 20,
-    paddingBottom: 24,
+    backgroundColor: '#fff',
   },
-  content: {
+  container: {
     flex: 1,
     width: '100%',
-    maxWidth: 600,
+    maxWidth: 460,
     alignSelf: 'center',
-    paddingHorizontal: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: CONTAINER_BOTTOM_PADDING,
     gap: 16,
   },
-  header: {
-    marginBottom: 8,
-    paddingHorizontal: 12,
-  },
-  title: {
-    color: '#e5e7eb',
-    fontSize: 28,
-    fontWeight: '700',
-    letterSpacing: 0.5,
-  },
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 6,
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-  },
-  statusText: {
-    color: '#cbd5e1',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  split: {
+  sectionStack: {
     flex: 1,
-    flexDirection: 'row',
-    gap: 0,
-    position: 'relative',
-    paddingHorizontal: 0,
-  },
-  panel: {
-    flex: 1,
-    borderRadius: 18,
-    padding: 20,
-    justifyContent: 'flex-start',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 12,
-    elevation: 6,
+    borderRadius: 24,
+    overflow: 'hidden',
+    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e5e7eb',
+    position: 'relative',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.12,
+    shadowRadius: 18,
+    elevation: 10,
   },
-  toPanel: {
-    backgroundColor: '#111827',
+  section: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
   },
-  fromPanel: {
-    backgroundColor: '#0f172a',
+  sectionActive: {
+    backgroundColor: '#f7f7fa',
   },
-  panelTop: {
+  sectionInactive: {
+    backgroundColor: '#fff',
+  },
+  sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 14,
   },
-  label: {
-    color: '#cbd5e1',
-    fontSize: 13,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  selectedCurrency: {
+  selector: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#1f2937',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    maxWidth: 170,
   },
-  badgeFlag: {
-    fontSize: 16,
+  selectorCode: {
+    color: '#1f2937',
+    fontSize: 24,
+    fontWeight: '700',
   },
-  badgeText: {
-    color: '#e5e7eb',
-    fontWeight: '800',
+  selectorChevron: {
+    color: '#6b7280',
+    fontSize: 18,
+  },
+  amountRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 8,
+  },
+  amountSymbol: {
+    color: '#9ca3af',
+    fontSize: 30,
+    marginBottom: 2,
+  },
+  amountText: {
+    color: '#111827',
+    fontSize: 50,
+    fontWeight: '200',
+    letterSpacing: 0.5,
+  },
+  amountMuted: {
+    color: '#d1d5db',
+  },
+  currencyLabel: {
+    marginTop: 8,
+    color: '#6b7280',
     fontSize: 14,
   },
-  badgeName: {
-    color: '#9ca3af',
-    fontSize: 12,
-    flexShrink: 1,
-  },
-  input: {
-    color: '#f3f4f6',
-    fontSize: 32,
-    fontWeight: '700',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    backgroundColor: '#0e1528',
-    borderWidth: 1,
-    borderColor: '#1f2937',
-  },
-  rateLine: {
-    color: '#94a3b8',
-    marginTop: 12,
-    fontSize: 13,
-    fontWeight: '600',
+  divider: {
+    height: 1,
+    backgroundColor: '#e5e7eb',
   },
   swapButton: {
     position: 'absolute',
-    top: '45%',
+    top: '50%',
     left: '50%',
-    transform: [{ translateX: -26 }, { translateY: -26 }],
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: '#22d3ee',
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: '#000',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#22d3ee',
+    transform: [{ translateX: -32 }, { translateY: -32 }],
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 12,
-    elevation: 10,
-    zIndex: 3,
+    shadowOpacity: 0.2,
+    shadowRadius: 14,
+    elevation: 12,
+    zIndex: 5,
   },
-  swapText: {
-    color: '#0b1222',
+  swapIcon: {
+    color: '#fff',
     fontWeight: '800',
     fontSize: 22,
   },
+  rateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 6,
+  },
+  rateText: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  statusPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  statusText: {
+    color: '#0f172a',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  keypad: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 16,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    gap: 10,
+  },
+  keyRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+  key: {
+    flex: 1,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#111827',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  keyGhost: {
+    backgroundColor: '#f8fafc',
+  },
+  keyBackspace: {
+    backgroundColor: '#0f172a',
+  },
+  keyLabel: {
+    color: '#0f172a',
+    fontSize: 22,
+    fontWeight: '500',
+  },
+  keyLabelInverse: {
+    color: '#fff',
+    fontWeight: '700',
+  },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor: 'transparent',
     justifyContent: 'flex-end',
+  },
+  modalShade: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(205, 156, 156, 0.25)',
   },
   modalAvoider: {
     width: '100%',
+    flex: 1,
+    justifyContent: 'flex-end',
   },
   modalCard: {
-    backgroundColor: '#0f172a',
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    maxHeight: '80%',
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+    maxHeight: '85%',
   },
   modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 12,
   },
   modalTitle: {
-    color: '#f3f4f6',
+    color: '#0f172a',
     fontSize: 18,
     fontWeight: '700',
   },
   searchInput: {
-    backgroundColor: '#111827',
-    color: '#e5e7eb',
-    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    color: '#0f172a',
+    borderRadius: 12,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginBottom: 10,
+    marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e5e7eb',
   },
   modalList: {
-    maxHeight: '70%',
+    paddingBottom: 12,
   },
   currencyRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 10,
+    paddingVertical: 12,
   },
-  rowFlag: {
-    fontSize: 18,
-    width: 30,
-  },
-  rowTextBlock: {
+  currencyTextBlock: {
     flex: 1,
   },
-  rowCode: {
-    color: '#e5e7eb',
+  currencyCodeText: {
+    color: '#0f172a',
     fontWeight: '700',
-    fontSize: 15,
+    fontSize: 16,
   },
-  rowName: {
-    color: '#9ca3af',
+  currencyNameText: {
+    color: '#6b7280',
     marginTop: 2,
+  },
+  currencyCheck: {
+    color: '#0f172a',
+    fontSize: 16,
+    fontWeight: '700',
   },
   rowDivider: {
     height: 1,
-    backgroundColor: '#1f2937',
+    backgroundColor: '#eceff4',
   },
   closeButton: {
     paddingVertical: 12,
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#1f2937',
-    marginTop: 8,
-    marginBottom: 12,
+    marginTop: 6,
   },
   closeText: {
-    color: '#e5e7eb',
+    color: '#111827',
     fontWeight: '700',
+    fontSize: 15,
   },
 });
