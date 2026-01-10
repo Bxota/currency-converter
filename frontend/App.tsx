@@ -40,6 +40,10 @@ const baseRates: Record<(typeof fallbackCurrencies)[number], number> = {
   CHF: 0.86,
 };
 
+const defaultBaseCurrency = 'USD';
+const openApiBaseUrl = 'https://open.er-api.com/v6';
+const openCurrenciesUrl = 'https://openexchangerates.org/api/currencies.json';
+
 const currencySymbols: Record<string, string> = {
   USD: '$',
   EUR: '€',
@@ -675,9 +679,9 @@ function AppContent() {
   const apiBaseUrl = process.env.EXPO_PUBLIC_API_BASE_URL;
   const [currencies, setCurrencies] = useState<string[]>([...fallbackCurrencies]);
   const [currencyNames, setCurrencyNames] = useState<Record<string, string>>(fallbackNames);
-  const [rates, setRates] = useState<Record<string, number>>(deriveRatesFromFallback('USD'));
+  const [rates, setRates] = useState<Record<string, number>>(deriveRatesFromFallback(defaultBaseCurrency));
   const [fromCurrency, setFromCurrency] = useState<string>('EUR');
-  const [toCurrency, setToCurrency] = useState<string>('USD');
+  const [toCurrency, setToCurrency] = useState<string>(defaultBaseCurrency);
   const [amountFrom, setAmountFrom] = useState('0');
   const [amountTo, setAmountTo] = useState('0.00');
   const [activeInput, setActiveInput] = useState<Target>('from');
@@ -710,67 +714,119 @@ function AppContent() {
   useEffect(() => {
     const loadSymbolsAndRates = async () => {
       setLoading(true);
-      if (!apiBaseUrl) {
-        console.log('[rates] missing EXPO_PUBLIC_API_BASE_URL, using fallback data');
+      const fallbackToStatic = () => {
         setCurrencies([...fallbackCurrencies]);
         setCurrencyNames(fallbackNames);
-        setRates(deriveRatesFromFallback('USD'));
+        setRates(deriveRatesFromFallback(defaultBaseCurrency));
         setUsingFallback(true);
-        setLoading(false);
-        return;
-      }
+      };
 
-      const trimmedBase = apiBaseUrl.replace(/\/$/, '');
-      const codesUrl = `${trimmedBase}/codes`;
-      const ratesUrl = `${trimmedBase}/rates?base=USD`;
+      const tryBackend = async () => {
+        if (!apiBaseUrl) return false;
 
-      console.log('[rates] fetching', { codesUrl, ratesUrl });
+        const trimmedBase = apiBaseUrl.replace(/\/$/, '');
+        const codesUrl = `${trimmedBase}/codes`;
+        const ratesUrl = `${trimmedBase}/rates?base=${defaultBaseCurrency}`;
 
-      try {
-        const [codesRes, ratesRes] = await Promise.all([fetch(codesUrl), fetch(ratesUrl)]);
+        console.log('[rates] fetching backend', { codesUrl, ratesUrl });
 
-        const codesJson = codesRes.ok ? await codesRes.json() : null;
-        const ratesJson = ratesRes.ok ? await ratesRes.json() : null;
+        try {
+          const [codesRes, ratesRes] = await Promise.all([fetch(codesUrl), fetch(ratesUrl)]);
 
-        const codesSuccess =
-          codesRes.ok && codesJson?.result === 'success' && Array.isArray(codesJson.supported_codes);
-        const ratesSuccess = ratesRes.ok && ratesJson?.result === 'success' && ratesJson.conversion_rates;
+          const codesJson = codesRes.ok ? await codesRes.json() : null;
+          const ratesJson = ratesRes.ok ? await ratesRes.json() : null;
 
-        console.log('[rates] responses', {
-          codesStatus: codesRes.status,
-          ratesStatus: ratesRes.status,
-          codesSuccess,
-          ratesSuccess,
-        });
+          const codesSuccess =
+            codesRes.ok && codesJson?.result === 'success' && Array.isArray(codesJson.supported_codes);
+          const ratesSuccess =
+            ratesRes.ok && ratesJson?.result === 'success' && ratesJson.conversion_rates;
 
-        if (codesSuccess) {
-          const pairs = codesJson.supported_codes as [string, string][];
-          const codes = pairs.map(([code]) => code).sort();
-          const names = Object.fromEntries(pairs);
+          console.log('[rates] backend responses', {
+            codesStatus: codesRes.status,
+            ratesStatus: ratesRes.status,
+            codesSuccess,
+            ratesSuccess,
+          });
+
+          if (codesSuccess) {
+            const pairs = codesJson.supported_codes as [string, string][];
+            const codes = pairs.map(([code]) => code).sort();
+            const names = Object.fromEntries(pairs);
+            setCurrencies(codes);
+            setCurrencyNames(names);
+          } else {
+            console.log('[rates] backend codes failed, using fallback codes');
+            setCurrencies([...fallbackCurrencies]);
+            setCurrencyNames(fallbackNames);
+          }
+
+          if (ratesSuccess) {
+            const incoming = ratesJson.conversion_rates as Record<string, number>;
+            const baseCode = (ratesJson.base_code as string) || defaultBaseCurrency;
+            setRates({ ...incoming, [baseCode]: incoming[baseCode] ?? 1 });
+          } else {
+            console.log('[rates] backend rates failed, using fallback rates');
+            setRates(deriveRatesFromFallback(defaultBaseCurrency));
+          }
+
+          setUsingFallback(!(codesSuccess && ratesSuccess));
+          return codesSuccess && ratesSuccess;
+        } catch (error) {
+          console.log('[rates] backend fetch failed', error);
+          return false;
+        }
+      };
+
+      const tryOpenApi = async () => {
+        const ratesUrl = `${openApiBaseUrl}/latest/${defaultBaseCurrency}`;
+        console.log('[rates] fetching open API fallback', { ratesUrl, openCurrenciesUrl });
+
+        try {
+          const [ratesRes, namesRes] = await Promise.all([
+            fetch(ratesUrl),
+            fetch(openCurrenciesUrl).catch((error) => {
+              console.log('[rates] open API currencies fetch failed (non-blocking)', error);
+              return null;
+            }),
+          ]);
+
+          const ratesJson = ratesRes.ok ? await ratesRes.json() : null;
+          const namesJson = namesRes && namesRes.ok ? await namesRes.json() : null;
+
+          const success = ratesRes.ok && ratesJson?.result === 'success' && ratesJson.rates;
+          if (!success) {
+            console.log('[rates] open API failed', { status: ratesRes.status, body: ratesJson });
+            return false;
+          }
+
+          const incoming = ratesJson.rates as Record<string, number>;
+          const baseCode = (ratesJson.base_code as string) || defaultBaseCurrency;
+          const codes = Object.keys(incoming).sort();
+          const namesSource =
+            namesJson && typeof namesJson === 'object' ? (namesJson as Record<string, string>) : null;
+          const names = Object.fromEntries(
+            codes.map((code) => [code, namesSource?.[code] || code])
+          );
+
           setCurrencies(codes);
           setCurrencyNames(names);
-        } else {
-          console.log('[rates] codes failed, using fallback codes');
-          setCurrencies([...fallbackCurrencies]);
-          setCurrencyNames(fallbackNames);
+          setRates({ ...incoming, [baseCode]: incoming[baseCode] ?? 1 });
+          setUsingFallback(true);
+          return true;
+        } catch (error) {
+          console.log('[rates] open API fetch failed', error);
+          return false;
         }
+      };
 
-        if (ratesSuccess) {
-          const incoming = ratesJson.conversion_rates as Record<string, number>;
-          const baseCode = (ratesJson.base_code as string) || 'USD';
-          setRates({ ...incoming, [baseCode]: 1 });
-        } else {
-          console.log('[rates] rates failed, using fallback rates');
-          setRates(deriveRatesFromFallback('USD'));
-        }
+      try {
+        // const backendOk = await tryBackend();
+        // if (backendOk) return;
 
-        setUsingFallback(!(codesSuccess && ratesSuccess));
-      } catch (error) {
-        console.log('[rates] fetch failed, using fallback', error);
-        setCurrencies([...fallbackCurrencies]);
-        setCurrencyNames(fallbackNames);
-        setRates(deriveRatesFromFallback('USD'));
-        setUsingFallback(true);
+        const openOk = await tryOpenApi();
+        if (openOk) return;
+
+        fallbackToStatic();
       } finally {
         setLoading(false);
       }
@@ -913,7 +969,7 @@ function AppContent() {
               </Text>
               <View style={[styles.statusPill, { backgroundColor: statusColor }]}>
                 <Text style={styles.statusText}>
-                  {loading ? 'Mise à jour' : usingFallback ? 'Taux locaux' : 'Taux en direct'}
+                  {loading ? 'Mise à jour' : usingFallback ? 'Taux openAPI' : 'Taux backend'}
                 </Text>
               </View>
             </View>
