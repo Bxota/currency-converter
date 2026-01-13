@@ -337,6 +337,17 @@ const createStyles = (theme: Theme) =>
       justifyContent: 'space-between',
       paddingHorizontal: 6,
     },
+    rateBlock: {
+      paddingHorizontal: 6,
+      gap: 8,
+    },
+    rateBadges: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 8,
+      justifyContent: 'flex-start',
+    },
     rateText: {
       color: theme.rateText,
       fontSize: 14,
@@ -348,6 +359,16 @@ const createStyles = (theme: Theme) =>
       borderRadius: 999,
       paddingHorizontal: 12,
       paddingVertical: 8,
+    },
+    datePill: {
+      backgroundColor: theme.cardActive,
+      borderWidth: 1,
+      borderColor: theme.cardBorder,
+    },
+    dateText: {
+      color: theme.selectorText,
+      fontWeight: '700',
+      fontSize: 12,
     },
     statusText: {
       color: theme.statusText,
@@ -691,6 +712,7 @@ function AppContent() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [keypadHeight, setKeypadHeight] = useState(0);
+  const [lastUpdatedUtc, setLastUpdatedUtc] = useState<string | null>(null);
   const { bottom: insetBottom } = useSafeAreaInsets();
   const systemScheme = useColorScheme();
   const themeName: ThemeName = systemScheme === 'dark' ? 'dark' : 'light';
@@ -711,6 +733,26 @@ function AppContent() {
     return rates[toCurrency] / rates[fromCurrency];
   }, [fromCurrency, toCurrency, rates]);
 
+  const lastUpdatedLabel = useMemo(() => {
+    if (!lastUpdatedUtc) return null;
+    const parsed = new Date(lastUpdatedUtc);
+    if (Number.isNaN(parsed.getTime())) return lastUpdatedUtc;
+
+    const datePart = parsed.toLocaleDateString('fr-FR', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      timeZone: 'UTC',
+    });
+    const timePart = parsed.toLocaleTimeString('fr-FR', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'UTC',
+    });
+    return `${datePart} ${timePart} UTC`;
+  }, [lastUpdatedUtc]);
+
   useEffect(() => {
     const loadSymbolsAndRates = async () => {
       setLoading(true);
@@ -719,6 +761,7 @@ function AppContent() {
         setCurrencyNames(fallbackNames);
         setRates(deriveRatesFromFallback(defaultBaseCurrency));
         setUsingFallback(true);
+        setLastUpdatedUtc(null);
       };
 
       const tryBackend = async () => {
@@ -764,9 +807,17 @@ function AppContent() {
             const incoming = ratesJson.conversion_rates as Record<string, number>;
             const baseCode = (ratesJson.base_code as string) || defaultBaseCurrency;
             setRates({ ...incoming, [baseCode]: incoming[baseCode] ?? 1 });
+            const backendUpdated =
+              typeof ratesJson?.time_last_update_utc === 'string'
+                ? ratesJson.time_last_update_utc
+                : typeof ratesJson?.time_last_update === 'string'
+                ? ratesJson.time_last_update
+                : null;
+            setLastUpdatedUtc(backendUpdated);
           } else {
             console.log('[rates] backend rates failed, using fallback rates');
             setRates(deriveRatesFromFallback(defaultBaseCurrency));
+            setLastUpdatedUtc(null);
           }
 
           setUsingFallback(!(codesSuccess && ratesSuccess));
@@ -811,6 +862,13 @@ function AppContent() {
           setCurrencies(codes);
           setCurrencyNames(names);
           setRates({ ...incoming, [baseCode]: incoming[baseCode] ?? 1 });
+          const openApiUpdated =
+            typeof ratesJson?.time_last_update_utc === 'string'
+              ? ratesJson.time_last_update_utc
+              : typeof ratesJson?.time_last_update === 'string'
+              ? ratesJson.time_last_update
+              : null;
+          setLastUpdatedUtc(openApiUpdated);
           setUsingFallback(true);
           return true;
         } catch (error) {
@@ -967,11 +1025,6 @@ function AppContent() {
               <Text style={styles.rateText}>
                 1 {fromCurrency} = {rate.toFixed(4)} {toCurrency}
               </Text>
-              <View style={[styles.statusPill, { backgroundColor: statusColor }]}>
-                <Text style={styles.statusText}>
-                  {loading ? 'Mise à jour' : usingFallback ? 'Taux openAPI' : 'Taux backend'}
-                </Text>
-              </View>
             </View>
 
             <Keypad
@@ -980,6 +1033,21 @@ function AppContent() {
               styles={styles}
               theme={theme}
             />
+
+            <View style={styles.rateBlock}>
+              <View style={styles.rateBadges}>
+                {lastUpdatedLabel ? (
+                  <View style={[styles.statusPill, styles.datePill]}>
+                    <Text style={styles.dateText}>{lastUpdatedLabel}</Text>
+                  </View>
+                ) : null}
+                <View style={[styles.statusPill, { backgroundColor: statusColor }]}>
+                  <Text style={styles.statusText}>
+                    {loading ? 'Mise à jour' : usingFallback ? 'Taux openAPI' : 'Taux backend'}
+                  </Text>
+                </View>
+              </View>
+            </View>
           </View>
         </KeyboardAvoidingView>
       </TouchableWithoutFeedback>
