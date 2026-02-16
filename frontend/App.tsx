@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import * as Haptics from 'expo-haptics';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useEffect, useMemo, useState } from 'react';
 import {
   FlatList,
@@ -41,8 +42,10 @@ const baseRates: Record<(typeof fallbackCurrencies)[number], number> = {
 };
 
 const defaultBaseCurrency = 'USD';
+const defaultFromCurrency = 'EUR';
 const openApiBaseUrl = 'https://open.er-api.com/v6';
 const openCurrenciesUrl = 'https://openexchangerates.org/api/currencies.json';
+const preferencesStorageKey = '@currency-converter/preferences:v1';
 
 const currencySymbols: Record<string, string> = {
   USD: '$',
@@ -57,6 +60,19 @@ const currencySymbols: Record<string, string> = {
 const sanitizeNumber = (value: string) => value.replace(/[^0-9.,]/g, '');
 const parseNumber = (value: string) => Number(value.replace(',', '.'));
 const formatAmount = (value: number) => (Number.isFinite(value) ? value.toFixed(2) : '0.00');
+const normalizeCurrencyCode = (value: unknown) =>
+  typeof value === 'string' ? value.trim().toUpperCase() : '';
+const normalizeFavorites = (values: unknown) => {
+  if (!Array.isArray(values)) return [];
+  const unique = new Set<string>();
+  values.forEach((value) => {
+    const normalized = normalizeCurrencyCode(value);
+    if (normalized) {
+      unique.add(normalized);
+    }
+  });
+  return [...unique];
+};
 
 const deriveRatesFromFallback = (base: string) => {
   if (!baseRates[base as keyof typeof baseRates]) return baseRates;
@@ -66,6 +82,14 @@ const deriveRatesFromFallback = (base: string) => {
 };
 
 type Target = 'from' | 'to';
+
+type StoredPreferences = {
+  favorites?: string[];
+  currentPair?: {
+    from?: string;
+    to?: string;
+  };
+};
 
 const keypadLayout = [
   ['1', '2', '3'],
@@ -492,10 +516,30 @@ const createStyles = (theme: Theme) =>
       color: theme.currencyName,
       marginTop: 2,
     },
+    currencyActions: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      marginLeft: 12,
+    },
+    favoriteButton: {
+      minWidth: 24,
+      alignItems: 'center',
+    },
+    favoriteIcon: {
+      color: theme.selectorChevron,
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    favoriteIconActive: {
+      color: '#f59e0b',
+    },
     currencyCheck: {
       color: theme.selectorText,
       fontSize: 16,
       fontWeight: '700',
+      minWidth: 18,
+      textAlign: 'center',
     },
     rowDivider: {
       height: 1,
@@ -570,12 +614,14 @@ type PickerProps = {
   visible: boolean;
   currencies: string[];
   currencyNames: Record<string, string>;
+  favorites: string[];
   selected: string;
   searchTerm: string;
   bottomOffset: number;
   styles: AppStyles;
   theme: Theme;
   onSearch: (value: string) => void;
+  onToggleFavorite: (code: string) => void;
   onSelect: (code: string) => void;
   onClose: () => void;
 };
@@ -584,73 +630,99 @@ const CurrencyPicker = ({
   visible,
   currencies,
   currencyNames,
+  favorites,
   selected,
   searchTerm,
   bottomOffset,
   styles,
   theme,
   onSearch,
+  onToggleFavorite,
   onSelect,
   onClose,
-}: PickerProps) => (
-  <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
-    <TouchableWithoutFeedback onPress={onClose} accessible={false}>
-      <View style={styles.modalBackdrop}>
-        <View style={[styles.modalShade, { bottom: bottomOffset || 0 }]} />
-        <TouchableWithoutFeedback>
-          <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
-            style={[styles.modalAvoider, { paddingBottom: bottomOffset || 0 }]}
-          >
-            <View style={styles.modalCard}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>Choisir une monnaie</Text>
-                <Pressable onPress={onClose} hitSlop={10}>
-                  <Text style={styles.selectorChevron}>✕</Text>
+}: PickerProps) => {
+  const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <TouchableWithoutFeedback onPress={onClose} accessible={false}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalShade, { bottom: bottomOffset || 0 }]} />
+          <TouchableWithoutFeedback>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              keyboardVerticalOffset={Platform.OS === 'ios' ? 20 : 0}
+              style={[styles.modalAvoider, { paddingBottom: bottomOffset || 0 }]}
+            >
+              <View style={styles.modalCard}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Choisir une monnaie</Text>
+                  <Pressable onPress={onClose} hitSlop={10}>
+                    <Text style={styles.selectorChevron}>✕</Text>
+                  </Pressable>
+                </View>
+
+                <TextInput
+                  value={searchTerm}
+                  onChangeText={onSearch}
+                  placeholder="Rechercher un code ou nom…"
+                  placeholderTextColor={theme.placeholder}
+                  style={styles.searchInput}
+                  autoFocus
+                />
+
+                <FlatList
+                  data={currencies}
+                  keyExtractor={(item) => item}
+                  renderItem={({ item }) => {
+                    const name = currencyNames[item] ?? '—';
+                    const isSelected = item === selected;
+                    const isFavorite = favoriteSet.has(item);
+                    return (
+                      <Pressable style={styles.currencyRow} onPress={() => onSelect(item)}>
+                        <View style={styles.currencyTextBlock}>
+                          <Text style={styles.currencyCodeText}>{item}</Text>
+                          <Text style={styles.currencyNameText}>{name}</Text>
+                        </View>
+                        <View style={styles.currencyActions}>
+                          <Pressable
+                            style={styles.favoriteButton}
+                            onPress={(event) => {
+                              event.stopPropagation();
+                              onToggleFavorite(item);
+                            }}
+                            hitSlop={8}
+                          >
+                            <Text
+                              style={[
+                                styles.favoriteIcon,
+                                isFavorite ? styles.favoriteIconActive : null,
+                              ]}
+                            >
+                              {isFavorite ? '★' : '☆'}
+                            </Text>
+                          </Pressable>
+                          <Text style={styles.currencyCheck}>{isSelected ? '✓' : ''}</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  }}
+                  ItemSeparatorComponent={() => <View style={styles.rowDivider} />}
+                  contentContainerStyle={styles.modalList}
+                  keyboardShouldPersistTaps="handled"
+                />
+
+                <Pressable style={styles.closeButton} onPress={onClose}>
+                  <Text style={styles.closeText}>Fermer</Text>
                 </Pressable>
               </View>
-
-              <TextInput
-                value={searchTerm}
-                onChangeText={onSearch}
-                placeholder="Rechercher un code ou nom…"
-                placeholderTextColor={theme.placeholder}
-                style={styles.searchInput}
-                autoFocus
-              />
-
-              <FlatList
-                data={currencies}
-                keyExtractor={(item) => item}
-                renderItem={({ item }) => {
-                  const name = currencyNames[item] ?? '—';
-                  const isSelected = item === selected;
-                  return (
-                    <Pressable style={styles.currencyRow} onPress={() => onSelect(item)}>
-                      <View style={styles.currencyTextBlock}>
-                        <Text style={styles.currencyCodeText}>{item}</Text>
-                        <Text style={styles.currencyNameText}>{name}</Text>
-                      </View>
-                      {isSelected ? <Text style={styles.currencyCheck}>✓</Text> : null}
-                    </Pressable>
-                  );
-                }}
-                ItemSeparatorComponent={() => <View style={styles.rowDivider} />}
-                contentContainerStyle={styles.modalList}
-                keyboardShouldPersistTaps="handled"
-              />
-
-              <Pressable style={styles.closeButton} onPress={onClose}>
-                <Text style={styles.closeText}>Fermer</Text>
-              </Pressable>
-            </View>
-          </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
-      </View>
-    </TouchableWithoutFeedback>
-  </Modal>
-);
+            </KeyboardAvoidingView>
+          </TouchableWithoutFeedback>
+        </View>
+      </TouchableWithoutFeedback>
+    </Modal>
+  );
+};
 
 type KeypadProps = {
   onPressKey: (key: string) => void;
@@ -701,8 +773,10 @@ function AppContent() {
   const [currencies, setCurrencies] = useState<string[]>([...fallbackCurrencies]);
   const [currencyNames, setCurrencyNames] = useState<Record<string, string>>(fallbackNames);
   const [rates, setRates] = useState<Record<string, number>>(deriveRatesFromFallback(defaultBaseCurrency));
-  const [fromCurrency, setFromCurrency] = useState<string>('EUR');
+  const [fromCurrency, setFromCurrency] = useState<string>(defaultFromCurrency);
   const [toCurrency, setToCurrency] = useState<string>(defaultBaseCurrency);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const [amountFrom, setAmountFrom] = useState('0');
   const [amountTo, setAmountTo] = useState('0.00');
   const [activeInput, setActiveInput] = useState<Target>('from');
@@ -722,6 +796,80 @@ function AppContent() {
   useEffect(() => {
     console.log('[env] EXPO_PUBLIC_API_BASE_URL =', apiBaseUrl);
   }, [apiBaseUrl]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadPreferences = async () => {
+      try {
+        const raw = await AsyncStorage.getItem(preferencesStorageKey);
+        if (!raw) return;
+
+        const parsed = JSON.parse(raw) as StoredPreferences;
+        if (!parsed || typeof parsed !== 'object') return;
+        if (!isMounted) return;
+
+        const savedFavorites = normalizeFavorites(parsed.favorites);
+        setFavorites(savedFavorites);
+
+        const savedFrom = normalizeCurrencyCode(parsed.currentPair?.from);
+        const savedTo = normalizeCurrencyCode(parsed.currentPair?.to);
+        if (savedFrom) {
+          setFromCurrency(savedFrom);
+        }
+        if (savedTo) {
+          setToCurrency(savedTo);
+        }
+      } catch (error) {
+        console.log('[prefs] load failed', error);
+      } finally {
+        if (isMounted) {
+          setPreferencesReady(true);
+        }
+      }
+    };
+
+    void loadPreferences();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (loading || !currencies.length) return;
+
+    setFavorites((previous) => {
+      const filtered = previous.filter((code) => currencies.includes(code));
+      return filtered.length === previous.length ? previous : filtered;
+    });
+
+    if (!currencies.includes(fromCurrency)) {
+      const fallbackFrom = currencies.includes(defaultFromCurrency) ? defaultFromCurrency : currencies[0];
+      setFromCurrency(fallbackFrom);
+    }
+
+    if (!currencies.includes(toCurrency)) {
+      const fallbackTo = currencies.includes(defaultBaseCurrency) ? defaultBaseCurrency : currencies[0];
+      setToCurrency(fallbackTo);
+    }
+  }, [loading, currencies, fromCurrency, toCurrency]);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+
+    const payload: StoredPreferences = {
+      favorites,
+      currentPair: {
+        from: fromCurrency,
+        to: toCurrency,
+      },
+    };
+
+    AsyncStorage.setItem(preferencesStorageKey, JSON.stringify(payload)).catch((error) => {
+      console.log('[prefs] save failed', error);
+    });
+  }, [preferencesReady, favorites, fromCurrency, toCurrency]);
 
   const statusColor = useMemo(() => {
     if (loading) return '#f59e0b';
@@ -973,14 +1121,25 @@ function AppContent() {
     closeModal();
   };
 
+  const toggleFavorite = (code: string) => {
+    setFavorites((previous) =>
+      previous.includes(code) ? previous.filter((item) => item !== code) : [code, ...previous]
+    );
+  };
+
+  const favoriteSet = useMemo(() => new Set(favorites), [favorites]);
+
   const filteredCurrencies = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    if (!term) return currencies;
-    return currencies.filter((code) => {
+    const matching = currencies.filter((code) => {
       const name = currencyNames[code]?.toLowerCase() ?? '';
       return code.toLowerCase().includes(term) || name.includes(term);
     });
-  }, [currencies, currencyNames, searchTerm]);
+    const matchingSet = new Set(matching);
+    const favoritesFirst = favorites.filter((code) => matchingSet.has(code));
+    const others = matching.filter((code) => !favoriteSet.has(code));
+    return [...favoritesFirst, ...others];
+  }, [currencies, currencyNames, searchTerm, favorites, favoriteSet]);
 
   const modalBottomOffset = Math.max(keypadHeight + insetBottom, 0);
 
@@ -1056,12 +1215,14 @@ function AppContent() {
         visible={modalVisible}
         currencies={filteredCurrencies}
         currencyNames={currencyNames}
+        favorites={favorites}
         selected={modalTarget === 'from' ? fromCurrency : toCurrency}
         searchTerm={searchTerm}
         bottomOffset={modalBottomOffset}
         styles={styles}
         theme={theme}
         onSearch={setSearchTerm}
+        onToggleFavorite={toggleFavorite}
         onSelect={selectCurrency}
         onClose={closeModal}
       />
