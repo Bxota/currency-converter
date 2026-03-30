@@ -11,6 +11,7 @@ import {
   Platform,
   Pressable,
   useColorScheme,
+  useWindowDimensions,
   StyleSheet,
   Text,
   TextInput,
@@ -229,8 +230,16 @@ const themes: Record<ThemeName, Theme> = {
   },
 };
 
-const createStyles = (theme: Theme) =>
-  StyleSheet.create({
+const createStyles = (theme: Theme, screenHeight: number) => {
+  // Scale aggressively for small screens (reference: iPhone 14 = 844pt)
+  const BASE_HEIGHT = 844;
+  const s = Math.min(1, screenHeight / BASE_HEIGHT);
+  const as_ = s < 1 ? Math.pow(s, 1.5) : 1;
+  const vs = (n: number) => Math.round(n * as_);
+  // Moderate scale for font sizes: keeps legibility on tiny screens
+  const ms = (n: number) => Math.round(n * (0.4 + 0.6 * as_));
+
+  return StyleSheet.create({
     flex: { flex: 1 },
     screen: {
       flex: 1,
@@ -242,9 +251,9 @@ const createStyles = (theme: Theme) =>
       maxWidth: 460,
       alignSelf: 'center',
       paddingHorizontal: 16,
-      paddingTop: 12,
+      paddingTop: vs(12),
       paddingBottom: CONTAINER_BOTTOM_PADDING,
-      gap: 16,
+      gap: vs(16),
     },
     topBar: {
       flexDirection: 'row',
@@ -275,8 +284,8 @@ const createStyles = (theme: Theme) =>
     },
     section: {
       flex: 1,
-      paddingHorizontal: 24,
-      paddingVertical: 24,
+      paddingHorizontal: 20,
+      paddingVertical: vs(24),
     },
     sectionActive: {
       backgroundColor: theme.cardActive,
@@ -288,7 +297,7 @@ const createStyles = (theme: Theme) =>
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      marginBottom: 14,
+      marginBottom: vs(14),
     },
     selector: {
       flexDirection: 'row',
@@ -297,12 +306,12 @@ const createStyles = (theme: Theme) =>
     },
     selectorCode: {
       color: theme.selectorText,
-      fontSize: 24,
+      fontSize: ms(24),
       fontWeight: '700',
     },
     selectorChevron: {
       color: theme.selectorChevron,
-      fontSize: 18,
+      fontSize: ms(18),
     },
     amountRow: {
       flexDirection: 'row',
@@ -311,12 +320,12 @@ const createStyles = (theme: Theme) =>
     },
     amountSymbol: {
       color: theme.amountSymbol,
-      fontSize: 30,
+      fontSize: ms(30),
       marginBottom: 2,
     },
     amountText: {
       color: theme.amountText,
-      fontSize: 50,
+      fontSize: ms(50),
       fontWeight: '200',
       letterSpacing: 0.5,
     },
@@ -324,7 +333,7 @@ const createStyles = (theme: Theme) =>
       color: theme.amountMuted,
     },
     currencyLabel: {
-      marginTop: 8,
+      marginTop: vs(8),
       color: theme.label,
       fontSize: 14,
     },
@@ -336,13 +345,13 @@ const createStyles = (theme: Theme) =>
       position: 'absolute',
       top: '50%',
       left: '50%',
-      width: 64,
-      height: 64,
-      borderRadius: 32,
+      width: vs(64),
+      height: vs(64),
+      borderRadius: vs(32),
       backgroundColor: theme.swapBackground,
       alignItems: 'center',
       justifyContent: 'center',
-      transform: [{ translateX: -32 }, { translateY: -32 }],
+      transform: [{ translateX: -vs(32) }, { translateY: -vs(32) }],
       shadowColor: theme.shadow,
       shadowOffset: { width: 0, height: 10 },
       shadowOpacity: 0.2,
@@ -353,7 +362,7 @@ const createStyles = (theme: Theme) =>
     swapIcon: {
       color: theme.swapIcon,
       fontWeight: '800',
-      fontSize: 22,
+      fontSize: ms(22),
     },
     rateRow: {
       flexDirection: 'row',
@@ -402,19 +411,19 @@ const createStyles = (theme: Theme) =>
     keypad: {
       backgroundColor: theme.keypadBackground,
       borderRadius: 16,
-      padding: 12,
+      padding: vs(12),
       borderWidth: 1,
       borderColor: theme.keypadBorder,
-      gap: 10,
+      gap: vs(10),
     },
     keyRow: {
       flexDirection: 'row',
-      gap: 10,
+      gap: vs(10),
     },
     key: {
       flex: 1,
-      height: 56,
-      borderRadius: 12,
+      height: vs(56),
+      borderRadius: vs(12),
       backgroundColor: theme.keyBackground,
       alignItems: 'center',
       justifyContent: 'center',
@@ -441,7 +450,7 @@ const createStyles = (theme: Theme) =>
     },
     keyLabel: {
       color: theme.keyLabel,
-      fontSize: 22,
+      fontSize: ms(22),
       fontWeight: '500',
     },
     keyLabelInverse: {
@@ -556,6 +565,7 @@ const createStyles = (theme: Theme) =>
       fontSize: 15,
     },
   });
+};
 
 type AppStyles = ReturnType<typeof createStyles>;
 
@@ -788,10 +798,11 @@ function AppContent() {
   const [keypadHeight, setKeypadHeight] = useState(0);
   const [lastUpdatedUtc, setLastUpdatedUtc] = useState<string | null>(null);
   const { bottom: insetBottom } = useSafeAreaInsets();
+  const { height: screenHeight } = useWindowDimensions();
   const systemScheme = useColorScheme();
   const themeName: ThemeName = systemScheme === 'dark' ? 'dark' : 'light';
   const theme = useMemo(() => themes[themeName], [themeName]);
-  const styles = useMemo(() => createStyles(theme), [theme]);
+  const styles = useMemo(() => createStyles(theme, screenHeight), [theme, screenHeight]);
 
   useEffect(() => {
     console.log('[env] EXPO_PUBLIC_API_BASE_URL =', apiBaseUrl);
